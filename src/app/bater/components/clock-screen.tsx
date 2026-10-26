@@ -32,10 +32,12 @@ export function ClockScreen() {
   const descriptorRef = useRef<number[] | null>(null);
   const [now, setNow] = useState(new Date());
   const [message, setMessage] = useState("Preparando a câmera...");
-  const [phase, setPhase] = useState<"scan" | "confirm" | "done">("scan");
+  const [phase, setPhase] = useState<"scan" | "confirm">("scan");
   const [match, setMatch] = useState<Match | null>(null);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<string | null>(null);
+  const blockedIdRef = useRef<string | null>(null);
+  const faceGoneSinceRef = useRef<number | null>(null);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 1000);
@@ -80,10 +82,16 @@ export function ClockScreen() {
         const descriptor = await detectDescriptor(video);
         if (cancelled) return;
         if (!descriptor) {
-          setMessage("Posicione o rosto na marcação");
+          if (faceGoneSinceRef.current === null) faceGoneSinceRef.current = Date.now();
+          if (blockedIdRef.current && Date.now() - faceGoneSinceRef.current > 800) {
+            blockedIdRef.current = null;
+          }
+          if (blockedIdRef.current) setResult(null);
+          setMessage(blockedIdRef.current ? "Ponto registrado. Próximo funcionário pode se aproximar." : "Posicione o rosto na marcação");
           timer = window.setTimeout(tick, 500);
           return;
         }
+        faceGoneSinceRef.current = null;
 
         const current = Date.now();
         if (current - lastRequest < 1200) {
@@ -91,7 +99,7 @@ export function ClockScreen() {
           return;
         }
         lastRequest = current;
-        setMessage("Conferindo facial...");
+        if (!blockedIdRef.current) setMessage("Conferindo facial...");
         const response = await fetch("/api/ponto/identificar", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -106,7 +114,15 @@ export function ClockScreen() {
         };
         if (cancelled) return;
         if (data.match && data.employee) {
+          if (data.employee.id === blockedIdRef.current) {
+            setResult(null);
+            setMessage("Ponto registrado. Afaste-se para o próximo funcionário.");
+            timer = window.setTimeout(tick, 700);
+            return;
+          }
+          blockedIdRef.current = null;
           descriptorRef.current = descriptor;
+          setResult(null);
           setMatch({
             employee: data.employee,
             today: data.today ?? [],
@@ -149,15 +165,14 @@ export function ClockScreen() {
         setSaving(false);
         return;
       }
+      blockedIdRef.current = match.employee.id;
+      faceGoneSinceRef.current = null;
+      descriptorRef.current = null;
+      setMatch(null);
+      setPhase("scan");
       setResult(`${data.label} registrada às ${data.time}`);
-      setPhase("done");
+      setMessage("Próximo funcionário pode se aproximar.");
       navigator.vibrate?.(80);
-      window.setTimeout(() => {
-        setMatch(null);
-        setResult(null);
-        setPhase("scan");
-        setMessage("Olhe para a câmera");
-      }, 2500);
     } catch {
       setMessage("Não foi possível gravar o ponto");
     } finally {
@@ -172,40 +187,42 @@ export function ClockScreen() {
     hourCycle: "h23",
   }).format(now);
 
+  const confirming = Boolean(match && phase !== "scan");
+
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-lg flex-col bg-slate-950 px-4 py-6 text-white">
-      <div className="mb-4 flex items-end justify-between">
+    <main className="fixed inset-0 mx-auto flex w-full max-w-lg flex-col overflow-hidden bg-slate-950 px-3 py-3 text-white sm:px-4">
+      <div className="mb-2 flex shrink-0 items-end justify-between">
         <div>
           <p className="text-xs font-semibold tracking-[0.2em] text-blue-300">RH PONTO</p>
-          <h1 className="text-2xl font-bold">Bater ponto</h1>
+          <h1 className="text-xl font-bold">Bater ponto</h1>
         </div>
-        <p className="font-mono text-3xl">{clock}</p>
+        <p className="font-mono text-2xl">{clock}</p>
       </div>
-      <div className="relative overflow-hidden rounded-3xl bg-black">
-        <video ref={videoRef} autoPlay muted playsInline className="aspect-[3/4] w-full -scale-x-100 object-cover sm:aspect-video" />
+      <div className="relative min-h-0 flex-1 overflow-hidden rounded-3xl bg-black">
+        <video ref={videoRef} autoPlay muted playsInline className="h-full w-full -scale-x-100 object-cover" />
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div className="h-40 w-28 rounded-[999px] border-4 border-white/80 shadow-[0_0_0_999px_rgba(2,6,23,0.35)] sm:h-64 sm:w-44" />
         </div>
       </div>
-      <p className="mt-4 text-center text-sm text-slate-300">{result || message}</p>
+      <p className="mt-2 shrink-0 text-center text-sm text-slate-300">{result || message}</p>
 
-      {match && phase !== "scan" && (
-        <section className="mt-4 rounded-2xl bg-slate-900 p-4">
+      {confirming && match && (
+        <section className="mt-2 shrink-0 rounded-2xl bg-slate-900 p-3">
           <div className="flex items-center gap-3">
             {match.employee.photo ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={match.employee.photo} alt="" className="h-16 w-16 rounded-full object-cover" />
+              <img src={match.employee.photo} alt="" className="h-12 w-12 rounded-full object-cover" />
             ) : (
-              <div className="h-16 w-16 rounded-full bg-slate-800" />
+              <div className="h-12 w-12 rounded-full bg-slate-800" />
             )}
-            <div>
-              <p className="text-lg font-semibold">{match.employee.name}</p>
-              <p className="text-sm text-slate-400">
+            <div className="min-w-0">
+              <p className="truncate text-base font-semibold">{match.employee.name}</p>
+              <p className="truncate text-xs text-slate-400">
                 {match.employee.companyName} · #{match.employee.registration}
               </p>
             </div>
           </div>
-          <div className="mt-3 grid grid-cols-2 gap-2 text-sm text-slate-300">
+          <div className="mt-2 grid grid-cols-2 gap-x-2 gap-y-0.5 text-xs text-slate-300">
             {match.today.length === 0 && <p>Nenhuma marcação hoje.</p>}
             {match.today.map((item) => (
               <p key={`${item.type}-${item.time}`}>
@@ -215,7 +232,7 @@ export function ClockScreen() {
           </div>
           {match.suggested && (
             <Button
-              className="mt-4 h-16 w-full bg-blue-600 text-lg text-white hover:bg-blue-500"
+              className="mt-2 h-12 w-full bg-blue-600 text-base text-white hover:bg-blue-500"
               disabled={saving}
               onClick={() => punch(match.suggested!)}
             >
@@ -223,14 +240,14 @@ export function ClockScreen() {
             </Button>
           )}
           {!match.suggested && (
-            <p className="mt-4 text-sm text-emerald-300">As quatro marcações de hoje já foram feitas. Escolha uma para registrar de novo.</p>
+            <p className="mt-2 text-xs text-emerald-300">As quatro marcações de hoje já foram feitas. Escolha uma para registrar de novo.</p>
           )}
-          <div className="mt-3 grid grid-cols-2 gap-2">
+          <div className="mt-2 grid grid-cols-2 gap-2">
             {PUNCH_TYPES.map((type) => (
               <Button
                 key={type.value}
                 variant="outline"
-                className="h-12 border-slate-700 bg-transparent text-white hover:bg-slate-800"
+                className="h-10 border-slate-700 bg-transparent text-sm text-white hover:bg-slate-800"
                 disabled={saving || type.value === match.suggested}
                 onClick={() => punch(type.value)}
               >
@@ -240,7 +257,7 @@ export function ClockScreen() {
           </div>
           <Button
             variant="ghost"
-            className="mt-2 w-full text-slate-300"
+            className="mt-1 h-8 w-full text-slate-300"
             onClick={() => {
               setMatch(null);
               setPhase("scan");
@@ -251,9 +268,11 @@ export function ClockScreen() {
           </Button>
         </section>
       )}
-      <Link href="/login" className="mt-auto pt-6 text-center text-xs text-slate-500">
-        Área administrativa
-      </Link>
+      {!confirming && (
+        <Link href="/login" className="shrink-0 pt-3 text-center text-xs text-slate-500">
+          Área administrativa
+        </Link>
+      )}
     </main>
   );
 }
