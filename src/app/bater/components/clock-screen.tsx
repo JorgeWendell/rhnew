@@ -184,7 +184,7 @@ export function ClockScreen() {
       <div className="relative overflow-hidden rounded-3xl bg-black">
         <video ref={videoRef} autoPlay muted playsInline className="aspect-[3/4] w-full -scale-x-100 object-cover sm:aspect-video" />
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <div className="h-64 w-44 rounded-[999px] border-4 border-white/80 shadow-[0_0_0_999px_rgba(2,6,23,0.35)]" />
+          <div className="h-40 w-28 rounded-[999px] border-4 border-white/80 shadow-[0_0_0_999px_rgba(2,6,23,0.35)] sm:h-64 sm:w-44" />
         </div>
       </div>
       <p className="mt-4 text-center text-sm text-slate-300">{result || message}</p>

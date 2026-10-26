@@ -116,7 +116,7 @@ export function FaceCaptureDialog({
               />
             ) : null}
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-              <div className="h-56 w-40 rounded-[999px] border-4 border-white/80" />
+              <div className="h-36 w-24 rounded-[999px] border-4 border-white/80 sm:h-56 sm:w-40" />
             </div>
           </div>
           <p className="mt-3 text-sm text-slate-500">{message}</p>
