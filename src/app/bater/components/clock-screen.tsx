@@ -10,7 +10,7 @@ import {
   startUserCamera,
   stopStream,
 } from "@/lib/face/browser";
-import { PUNCH_TYPES, punchLabel, type PunchType } from "@/lib/ponto/constants";
+import { PUNCH_TYPES, duplicatePunchMessage, punchLabel, type PunchType } from "@/lib/ponto/constants";
 
 type TodayPunch = { type: PunchType; label: string; time: string };
 
@@ -240,20 +240,29 @@ export function ClockScreen() {
             </Button>
           )}
           {!match.suggested && (
-            <p className="mt-2 text-xs text-emerald-300">As quatro marcações de hoje já foram feitas. Escolha uma para registrar de novo.</p>
+            <p className="mt-2 text-xs text-emerald-300">As quatro marcações de hoje já foram feitas.</p>
           )}
           <div className="mt-2 grid grid-cols-2 gap-2">
-            {PUNCH_TYPES.map((type) => (
-              <Button
-                key={type.value}
-                variant="outline"
-                className="h-10 border-slate-700 bg-transparent text-sm text-white hover:bg-slate-800"
-                disabled={saving || type.value === match.suggested}
-                onClick={() => punch(type.value)}
-              >
-                {type.label}
-              </Button>
-            ))}
+            {PUNCH_TYPES.map((type) => {
+              const used = match.today.some((item) => item.type === type.value);
+              return (
+                <Button
+                  key={type.value}
+                  variant="outline"
+                  className="h-10 border-slate-700 bg-transparent text-sm text-white hover:bg-slate-800"
+                  disabled={saving || used || type.value === match.suggested}
+                  onClick={() => {
+                    if (used) {
+                      setMessage(duplicatePunchMessage(type.value));
+                      return;
+                    }
+                    void punch(type.value);
+                  }}
+                >
+                  {type.label}
+                </Button>
+              );
+            })}
           </div>
           <Button
             variant="ghost"

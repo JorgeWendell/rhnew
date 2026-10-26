@@ -6,7 +6,9 @@ import { z } from "zod";
 import { db } from "@/db";
 import { companiesTable, employeesTable, punchesTable } from "@/db/schema";
 import { authActionClient } from "@/lib/next-safe-action";
+import { duplicatePunchMessage, type PunchType } from "@/lib/ponto/constants";
 import { addDays, saoPauloDateTime } from "@/lib/ponto/time";
+import { isUniqueViolation } from "@/lib/utils";
 
 const punchTypeSchema = z.enum(["entry", "lunch_out", "lunch_in", "exit"]);
 
@@ -67,16 +69,39 @@ export const createPunchAction = authActionClient
 
     if (!employee) throw new Error("Funcionário não encontrado");
 
-    const [punch] = await db
-      .insert(punchesTable)
-      .values({
-        employeeId: parsedInput.employeeId,
-        type: parsedInput.type,
-        punchedAt: saoPauloDateTime(parsedInput.date, parsedInput.time),
-        source: "manual",
-        createdByUserId: ctx.user.id,
-      })
-      .returning({ id: punchesTable.id });
+    const dayStart = saoPauloDateTime(parsedInput.date, "00:00");
+    const dayEnd = saoPauloDateTime(addDays(parsedInput.date, 1), "00:00");
+    const [existing] = await db
+      .select({ id: punchesTable.id })
+      .from(punchesTable)
+      .where(
+        and(
+          eq(punchesTable.employeeId, parsedInput.employeeId),
+          eq(punchesTable.type, parsedInput.type),
+          gte(punchesTable.punchedAt, dayStart),
+          lt(punchesTable.punchedAt, dayEnd),
+        ),
+      )
+      .limit(1);
+
+    if (existing) throw new Error(duplicatePunchMessage(parsedInput.type as PunchType));
+
+    let punch: { id: string };
+    try {
+      [punch] = await db
+        .insert(punchesTable)
+        .values({
+          employeeId: parsedInput.employeeId,
+          type: parsedInput.type,
+          punchedAt: saoPauloDateTime(parsedInput.date, parsedInput.time),
+          source: "manual",
+          createdByUserId: ctx.user.id,
+        })
+        .returning({ id: punchesTable.id });
+    } catch (error) {
+      if (isUniqueViolation(error)) throw new Error(duplicatePunchMessage(parsedInput.type as PunchType));
+      throw error;
+    }
 
     return { success: true as const, id: punch.id };
   });

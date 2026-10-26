@@ -4,8 +4,8 @@ export const FACE_MATCH_MAX_DISTANCE = 0.5;
 
 export const PUNCH_TYPES = [
   { value: "entry", label: "Entrada" },
-  { value: "lunch_out", label: "Saída almoço" },
   { value: "lunch_in", label: "Entrada almoço" },
+  { value: "lunch_out", label: "Saída almoço" },
   { value: "exit", label: "Saída" },
 ] as const;
 
@@ -43,4 +43,8 @@ export function punchLabel(type: PunchType): string {
 
 export function nextPunchType(existing: PunchType[]): PunchType | null {
   return PUNCH_TYPES.find((item) => !existing.includes(item.value))?.value ?? null;
+}
+
+export function duplicatePunchMessage(type: PunchType) {
+  return `${punchLabel(type)} já registrada hoje`;
 }

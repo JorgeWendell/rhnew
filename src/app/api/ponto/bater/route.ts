@@ -2,10 +2,11 @@ import { NextResponse } from "next/server";
 
 import { db } from "@/db";
 import { punchesTable } from "@/db/schema";
-import { FACE_MATCH_MAX_DISTANCE, punchLabel, type PunchType } from "@/lib/ponto/constants";
+import { FACE_MATCH_MAX_DISTANCE, duplicatePunchMessage, punchLabel, type PunchType } from "@/lib/ponto/constants";
 import { euclidean, parseDescriptor } from "@/lib/ponto/face-match";
 import { employeesWithFace, todayPunches, tooManyRequests } from "@/lib/ponto/identify";
 import { formatDateTime } from "@/lib/ponto/time";
+import { isUniqueViolation } from "@/lib/utils";
 
 export const runtime = "nodejs";
 
@@ -40,14 +41,26 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: false, message: "A facial não confere com o funcionário" }, { status: 403 });
   }
 
+  const today = await todayPunches(employee.id);
+  if (today.some((punch) => punch.type === type)) {
+    return NextResponse.json({ success: false, message: duplicatePunchMessage(type) }, { status: 409 });
+  }
+
   const punchedAt = new Date();
-  await db.insert(punchesTable).values({
-    employeeId: employee.id,
-    type,
-    punchedAt,
-    source: "facial",
-    faceDistance: distance,
-  });
+  try {
+    await db.insert(punchesTable).values({
+      employeeId: employee.id,
+      type,
+      punchedAt,
+      source: "facial",
+      faceDistance: distance,
+    });
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      return NextResponse.json({ success: false, message: duplicatePunchMessage(type) }, { status: 409 });
+    }
+    throw error;
+  }
 
   return NextResponse.json({
     success: true,

@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
   date,
@@ -12,6 +13,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
@@ -178,6 +180,11 @@ export const punchesTable = pgTable(
   },
   (table) => [
     index("punches_employee_punched_at_idx").on(table.employeeId, table.punchedAt),
+    uniqueIndex("punches_employee_type_day_uidx").on(
+      table.employeeId,
+      table.type,
+      sql`((${table.punchedAt} AT TIME ZONE 'America/Sao_Paulo')::date)`,
+    ),
   ],
 );
 

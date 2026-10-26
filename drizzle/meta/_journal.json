@@ -8,6 +8,13 @@
       "when": 1793041112131,
       "tag": "0000_magical_warstar",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793046765747,
+      "tag": "0001_dark_frog_thor",
+      "breakpoints": true
     }
   ]
 }
