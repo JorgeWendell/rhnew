@@ -1,0 +1,89 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: ponto-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pontouser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pontoprod123}
+      POSTGRES_DB: ${POSTGRES_DB:-ponto}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-pontouser} -d ${POSTGRES_DB:-ponto}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - ponto-network
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: migrator
+    container_name: ponto-migrate
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-pontouser}:${POSTGRES_PASSWORD:-pontoprod123}@db:5432/${POSTGRES_DB:-ponto}
+    command: ["npm", "run", "db:migrate"]
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - ponto-network
+    restart: "no"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: app
+      args:
+        NEXT_PUBLIC_BASE_URL: ${NEXT_PUBLIC_BASE_URL:-https://ponto.adelbr.tech}
+    container_name: ponto-app
+    restart: unless-stopped
+    expose:
+      - "3000"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-pontouser}:${POSTGRES_PASSWORD:-pontoprod123}@db:5432/${POSTGRES_DB:-ponto}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-TTvZrG8sOdF1ZOJOcTS7CwoFv1vMomVx6XK60TV/OU0=}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-https://ponto.adelbr.tech}
+      NEXT_PUBLIC_BASE_URL: ${NEXT_PUBLIC_BASE_URL:-https://ponto.adelbr.tech}
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - ponto-network
+      - traefik
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=${TRAEFIK_NETWORK:-proxy}
+      - traefik.http.routers.ponto.rule=Host(`${APP_DOMAIN:-ponto.adelbr.tech}`)
+      - traefik.http.routers.ponto.entrypoints=websecure
+      - traefik.http.routers.ponto.tls=true
+      - traefik.http.routers.ponto.tls.certresolver=letsencrypt
+      - traefik.http.routers.ponto.service=ponto
+      - traefik.http.services.ponto.loadbalancer.server.port=3000
+      - traefik.http.routers.ponto-http.rule=Host(`${APP_DOMAIN:-ponto.adelbr.tech}`)
+      - traefik.http.routers.ponto-http.entrypoints=web
+      - traefik.http.routers.ponto-http.middlewares=ponto-https-redirect
+      - traefik.http.middlewares.ponto-https-redirect.redirectscheme.scheme=https
+      - traefik.http.middlewares.ponto-https-redirect.redirectscheme.permanent=true
+
+networks:
+  ponto-network:
+    driver: bridge
+  traefik:
+    external: true
+    name: ${TRAEFIK_NETWORK:-proxy}
+
+volumes:
+  postgres_data:
