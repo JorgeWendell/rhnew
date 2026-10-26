@@ -3,7 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { useAction } from "next-safe-action/hooks";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -16,6 +16,7 @@ import {
   updateEmployeeAction,
 } from "@/actions/employees";
 import { FaceCaptureDialog } from "@/components/face-capture-dialog";
+import { cameraErrorMessage, requestUserCamera, stopStream } from "@/lib/face/browser";
 import { NativeSelect } from "@/components/native-select";
 import { PageHeader } from "@/components/page-header";
 import {
@@ -108,10 +109,38 @@ export function EmployeesPanel() {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [faceOpen, setFaceOpen] = useState(false);
+  const [openingCamera, setOpeningCamera] = useState(false);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
   const [editing, setEditing] = useState<Employee | null>(null);
   const [removing, setRemoving] = useState<Employee | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [hasStoredFace, setHasStoredFace] = useState(false);
+
+  function releaseCamera() {
+    stopStream(cameraStreamRef.current);
+    cameraStreamRef.current = null;
+    setCameraStream(null);
+  }
+
+  useEffect(() => {
+    return () => stopStream(cameraStreamRef.current);
+  }, []);
+
+  async function openFaceCamera() {
+    setOpeningCamera(true);
+    releaseCamera();
+    try {
+      const stream = await requestUserCamera();
+      cameraStreamRef.current = stream;
+      setCameraStream(stream);
+      setFaceOpen(true);
+    } catch (error) {
+      toast.error(cameraErrorMessage(error));
+    } finally {
+      setOpeningCamera(false);
+    }
+  }
 
   const form = useForm<EmployeeFormValues>({
     resolver: zodResolver(employeeSchema),
@@ -373,8 +402,13 @@ export function EmployeesPanel() {
                       {hasStoredFace || preview ? "Pronta para o relógio de ponto." : "Ainda não capturada."}
                     </p>
                   </div>
-                  <Button type="button" variant="outline" onClick={() => setFaceOpen(true)}>
-                    Capturar
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={openingCamera}
+                    onClick={() => void openFaceCamera()}
+                  >
+                    {openingCamera ? "Abrindo câmera..." : "Capturar"}
                   </Button>
                 </div>
                 {hasStoredFace && (
@@ -424,7 +458,11 @@ export function EmployeesPanel() {
 
       <FaceCaptureDialog
         open={faceOpen}
-        onOpenChange={setFaceOpen}
+        stream={cameraStream}
+        onOpenChange={(value) => {
+          setFaceOpen(value);
+          if (!value) releaseCamera();
+        }}
         onCapture={({ descriptor, photo }) => {
           form.setValue("faceDescriptor", descriptor);
           form.setValue("facePhoto", photo);

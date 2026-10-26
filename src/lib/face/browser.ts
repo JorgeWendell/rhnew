@@ -35,18 +35,49 @@ export async function detectDescriptor(video: HTMLVideoElement) {
   return Array.from(detection.descriptor);
 }
 
-export async function startUserCamera(video: HTMLVideoElement) {
-  const stream = await navigator.mediaDevices.getUserMedia({
-    audio: false,
-    video: {
-      facingMode: "user",
-      width: { ideal: 640 },
-      height: { ideal: 480 },
+export async function requestUserCamera() {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    throw new Error("Este navegador não permite acesso à câmera.");
+  }
+
+  const attempts: MediaStreamConstraints[] = [
+    {
+      audio: false,
+      video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
     },
-  });
+    { audio: false, video: true },
+  ];
+
+  let lastError: unknown;
+  for (const constraints of attempts) {
+    try {
+      return await navigator.mediaDevices.getUserMedia(constraints);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError;
+}
+
+export async function playStream(video: HTMLVideoElement, stream: MediaStream) {
+  video.muted = true;
+  video.defaultMuted = true;
+  video.playsInline = true;
   video.srcObject = stream;
   await video.play();
-  return stream;
+}
+
+export async function startUserCamera(video: HTMLVideoElement) {
+  const stream = await requestUserCamera();
+  try {
+    await playStream(video, stream);
+    return stream;
+  } catch (error) {
+    stopStream(stream);
+    video.srcObject = null;
+    throw error;
+  }
 }
 
 export function stopStream(stream: MediaStream | null) {
@@ -63,6 +94,10 @@ export function cameraErrorMessage(error: unknown) {
   if (error instanceof DOMException && error.name === "NotFoundError") {
     return "Nenhuma câmera foi encontrada neste dispositivo.";
   }
+  if (error instanceof DOMException && error.name === "NotReadableError") {
+    return "A câmera está em uso por outro programa. Feche-o e tente de novo.";
+  }
+  if (error instanceof Error && error.message) return error.message;
   return "Não foi possível abrir a câmera.";
 }
 
